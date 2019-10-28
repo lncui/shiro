@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+	<!-- 
+	1. 配置SecurityManager:相当于SpringMVC中的DispatcherServlet；是Shiro的心脏；所有具体的交互都通过SecurityManager进行控制；它管理着所有Subject、且负责进行认证、授权、会话及缓存的管理。
+	 -->
+	 <bean id="securityManager" class="org.apache.shiro.web.mgt.DefaultWebSecurityManager">
+	 	<property name="cacheManager" ref="cacheManager"/>
+		 <property name="sessionManager" ref="sessionManager"/>
+	 	<property name="authenticator" ref="authenticator"/>
+	 	<property name="realms">
+		  	<list>
+			  	<ref bean="jdbcRealm"/>
+		  	</list>
+	  	</property>
+		 <!-- 设置securityManager安全管理器的rememberMeManger -->
+		 <property name="rememberMeManager" ref="rememberMeManager"/>
+	 </bean>
+
+
+	 <!-- 
+	 2. 配置CacheManager:缓存控制器，来管理如用户、角色、权限等的缓存的；因为这些数据基本上很少改变，放到缓存中后可以提高访问的性能
+	 2.1 需要加入ehcache的jar包及配置文件.
+	  -->
+	  <bean id="cacheManager" class="org.apache.shiro.cache.ehcache.EhCacheManager">
+	  	<!-- <property name="cacheManager" ref="ehCacheManager"/> -->
+	  	<property name="cacheManagerConfigFile" value="classpath:cache/ehcache.xml"/>
+	  </bean>
+
+
+	  	<!-- 
+	  	认证策略 
+	  	1).FirstSuccessfulStrategy:只要有一个Realm验证成功即可，只返回第一个Realm身份验证成功的认证信息，其他的忽略；
+	  	
+	  	2).AtLeastOneSuccessfulStrategy:只要有一个Realm验证成功即可，和FirstSuccessfulStrategy不同，将返回所有Realm
+	  									身份验证成功的认证信息；
+	    3).AllSuccessfulStrategy:所有Realm验证成功才算成功，且返回所有Realm身份验证成功的认证信息，如果有一个失败就失败了；
+	  	
+	  	-->
+	  <bean id="authenticator" class="org.apache.shiro.authc.pam.ModularRealmAuthenticator">
+	  	<property name="authenticationStrategy">
+	  		<bean class="org.apache.shiro.authc.pam.AtLeastOneSuccessfulStrategy"/>
+	  	</property>
+	  </bean>
+
+
+	  <!-- 
+	  3.配置 Realm:可以有1 个或多个Realm，可以认为是安全实体数据源，即用于获取安全实体的；可以是JDBC 实现，也可以是内存实现等等；由用户提供；所以一般在应用中都需要实现自己的Realm；
+	  3.1 直接配置实现了 org.apache.shiro.realm.Realm 接口的bean
+	   -->
+	   <bean id="jdbcRealm" class="com.lncui.shiro.realms.ShiroRealm">
+		   <!-- 使用credentialsMatcher实现密码验证服务 -->
+		   <property name="credentialsMatcher">
+			   <bean class="com.lncui.shiro.credentials.CredentialsMatcher"></bean>
+
+			  <!--
+			  <bean class="org.apache.shiro.authc.credential.HashedCredentialsMatcher">
+			   	<property name="hashAlgorithmName" value="MD5"></property> &lt;!&ndash; 设置加密方式 为md5加密 &ndash;&gt;
+			   	<property name="hashIterations" value="1024"></property> &lt;!&ndash; 设置加密次数 &ndash;&gt;
+			   </bean>
+			   -->
+		   </property>
+		   <!-- 是否启用缓存 -->
+		   <property name="cachingEnabled" value="false"/>
+		   <!-- 是否启用身份验证缓存 -->
+		   <property name="authenticationCachingEnabled" value="false"/>
+		   <!-- 缓存AuthenticationInfo信息的缓存名称 -->
+		   <property name="authenticationCacheName" value="authenticationCache"/>
+		   <!-- 是否启用授权缓存，缓存AuthorizationInfo信息 -->
+		   <property name="authorizationCachingEnabled" value="false"/>
+		   <!-- 缓存AuthorizationInfo信息的缓存名称 -->
+		   <property name="authorizationCacheName" value="authorizationCache"/>
+	   </bean>
+
+		<!-- 会话ID生成器，用于生成会话的ID，使用JavaScript的UUID生成 -->
+		<bean id="sessionIdGenerator" class="org.apache.shiro.session.mgt.eis.JavaUuidSessionIdGenerator"/>
+
+		<!-- 会话Cookie模板 -->
+		<bean id="sessionIdCookie" class="org.apache.shiro.web.servlet.SimpleCookie">
+			<constructor-arg value="sid"/>
+			<!-- 如果设置为true，则客户端不会暴露给服务端脚本代码，有助于减少某些类型的跨站脚本攻击 -->
+			<property name="httpOnly" value="true"/>
+			<property name="maxAge" value="-1"/><!-- maxAge=-1表示浏览器关闭时失效此Cookie -->
+		</bean>
+
+		<bean id="rememberMeCookie" class="org.apache.shiro.web.servlet.SimpleCookie">
+			<constructor-arg value="rememberMe"/>
+			<property name="httpOnly" value="true"/>
+			<property name="maxAge" value="2592000"/><!-- 30天 -->
+		</bean>
+
+		<!-- rememberMe管理器 -->
+		<bean id="rememberMeManager" class="org.apache.shiro.web.mgt.CookieRememberMeManager">
+			<!-- cipherKey是加密rememberMe Cookie的密匙，默认AES算法 -->
+			<property name="cipherKey" value="#{T(org.apache.shiro.codec.Base64).decode('4AvVhmFLUs0KTA3Kprsdag==')}"/>
+			<property name="cookie" ref="rememberMeCookie"/>
+		</bean>
+
+		<!-- 会话DAO -->
+		<bean id="sessionDAO" class="org.apache.shiro.session.mgt.eis.EnterpriseCacheSessionDAO">
+			<!-- 设置session缓存的名称，默认就是shiro-activeSessionCache -->
+			<property name="activeSessionsCacheName" value="shiro-activeSessionCache"/>
+			<property name="sessionIdGenerator" ref="sessionIdGenerator"/>
+		</bean>
+
+		<!-- 会话管理器 -->
+		<bean id="sessionManager" class="org.apache.shiro.web.session.mgt.DefaultWebSessionManager">
+			<!-- 设置全局会话过期时间：默认30分钟 -->
+			<property name="globalSessionTimeout" value="1800000"/>
+			<!-- 是否自动删除无效会话 -->
+			<property name="deleteInvalidSessions" value="true"/>
+			<!-- 会话验证是否启用 -->
+			<property name="sessionValidationSchedulerEnabled" value="true"/>
+			<!-- 会话验证调度器 -->
+			<property name="sessionValidationScheduler" ref="sessionValidationScheduler"/>
+			<!-- 会话持久化sessionDao -->
+			<property name="sessionDAO" ref="sessionDAO"/>
+			<!-- 是否启用sessionIdCookie，默认是启用的 -->
+			<property name="sessionIdCookieEnabled" value="true"/>
+			<!-- 会话Cookie -->
+			<property name="sessionIdCookie" ref="sessionIdCookie"/>
+		</bean>
+
+		<!-- 会话验证调度器 -->
+		<bean id="sessionValidationScheduler" class="org.apache.shiro.session.mgt.quartz.QuartzSessionValidationScheduler">
+			<property name="sessionValidationInterval" value="1800000"/>
+			<property name="sessionManager" ref="sessionManager"/>
+		</bean>
+
+
+
+		<!--
+		4.配置LifecycleBeanPostProcessor,可以自定义的来调用配置在Spring IOC容器中 shiro bean的生命周期方法
+		 -->
+	    <bean id="lifecycleBeanPostProcessor" class="org.apache.shiro.spring.LifecycleBeanPostProcessor"></bean>
+
+
+	   <!-- 
+	   5.启用IOC容器中使用shiro的注解，但必须在配置了LifecycleBeanPostProcessor 之后才可以使用.
+	    -->
+	   <bean class="org.springframework.aop.framework.autoproxy.DefaultAdvisorAutoProxyCreator" depends-on="lifecycleBeanPostProcessor"/>
+	   
+	   <bean class="org.apache.shiro.spring.security.interceptor.AuthorizationAttributeSourceAdvisor">
+	   		<property name="securityManager" ref="securityManager"/>
+	   </bean>
+
+
+	   <!-- 
+	   6. 配置ShiroFilter.
+	   6.1 id必须和web.xml 文件中配置的DelegatingFilterProxy 的<filter-name>一致.
+	   		若不一致，则会抛出：NoSuchBeanDefinitionException.因为Shiro会来IOC容器中查找和<filter-name>名字对应的filter bean.
+	    -->
+	    <bean id="shiroFilter" class="org.apache.shiro.spring.web.ShiroFilterFactoryBean">
+	    	<property name="securityManager" ref="securityManager"/>
+	    	<property name="loginUrl" value="/passport/login"/>
+	    	<property name="successUrl" value="/passport/index"/>
+	    	<property name="unauthorizedUrl" value="/passport/unauthorized"/>
+	    	<property name="filterChainDefinitionMap" ref="filterChainDefinitionMap"></property>
+	    	<!-- 
+	    		配置哪些页面需要受保护.
+	    		以及访问这些页面需要的权限.
+	    		1). anon 可以被匿名访问
+	    		2). authc 必须认证（即登录）后才可能访问的页面.
+	    		3). logout 登出.
+	    		4). roles 角色过滤器
+	    	 -->
+	    	 <!--
+	    	<property name="filterChainDefinitions">
+	    		<value>
+	    			/login.jsp = anon
+	    			/shiro/login = anon
+	    			/shiro/logout = logout
+	    			
+	    			/admin.jsp = roles[admin]
+	    			/user.jsp = roles[user]
+	    			
+	    			/** = authc
+	    		</value>
+	    	</property>
+	    	 -->
+	    </bean>
+	    <!-- 配置一个bean，该bean实际上是一个Map，通过实例工厂方法的方式 -->
+	    <bean id="filterChainDefinitionMap" factory-bean="filterChainDefinitionMapbuilder" factory-method="bulidFilterChainDefinitionMap"></bean>
+	    
+	    <bean id="filterChainDefinitionMapbuilder" class="com.lncui.shiro.factory.FilterChainDefinitionMapbuilder"></bean>
+	   
+</beans>

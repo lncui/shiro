@@ -1,0 +1,20 @@
+/target/
+.classpath
+.externalToolBuilders
+.project
+.settings
+/.idea
+.DS_Store
+*.iml
+
+# Package Files #
+*.jar
+*.war
+*.ear
+
+*.class
+.mtj
+.tmp/
+hs_err_pid*
+
+*/target
